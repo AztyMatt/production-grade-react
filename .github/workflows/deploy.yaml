@@ -1,4 +1,5 @@
-name: Deploy
+name: Build and Deploy
+
 on:
   push:
     branches:
@@ -7,17 +8,42 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # Set up a base environment for this job
     steps:
+      # Clone the git repository in the environment -> 'ubuntu-latest'
       - uses: actions/checkout@v2
+
+      # Set up Docker in the environment
       - run: docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
       - run: docker build -t azty/react-test -f Dockerfile.dev .
       - run: docker run -e CI=true azty/react-test npm test
 
+      # Create a .zip for deployment
       - name: Generate deployment package
         run: zip -r deploy.zip . -x '*.git*'
 
-      - name: Deploy to EB
+      # Store the deployment package as an artifact to be used by the deploy job
+      - name: Upload deployment package
+        uses: actions/upload-artifact@v3
+        with:
+          name: deploy-package
+          path: deploy.zip
+
+  deploy:
+    runs-on: ubuntu-latest # Set up a base environment for this job
+    needs: build  # This ensures the deploy job runs after the build job
+    steps:
+      # Clone the git repository in the environment, 'ubuntu-latest'
+      - uses: actions/checkout@v2
+
+      # Download the deployment package from the previous job
+      - name: Download deployment package
+        uses: actions/download-artifact@v3
+        with:
+          name: deploy-package
+
+      # Deploy the project on AWS Elastic Beanstalk
+      - name: Deploy to Elastic Beanstalk
         uses: einaregilsson/beanstalk-deploy@v18
         with:
           aws_access_key: ${{ secrets.AWS_ACCESS_KEY }}
